@@ -11,7 +11,8 @@ let showPrompt = true;
 let showProcessing = false;
 let ocrRecognizer;
 let visionLoaded = false;
-let resetTimer = false;
+let releaseImageTimer = 0;
+let releaseAfter = 3000;
 
 const inflammatoryIngredients = {
   "high fructose corn syrup": "Linked to obesity, insulin resistance, and inflammation.",
@@ -57,6 +58,12 @@ function draw() {
       showPrompt = true;
     }
   }
+
+  // Release the image after a fixed time
+  if (releaseImageTimer > 0 && millis() - releaseImageTimer > releaseAfter) {
+    showProcessing = false;
+    releaseImageTimer = 0;
+  }
 }
 
 function mousePressed() {
@@ -96,9 +103,9 @@ async function processFrame() {
   message = detectedIngredients.length > 0 ? "INFLAMMATORY" : "SAFE";
 
   alertDuration = message === "INFLAMMATORY" ? 5000 : 2500;
-  showProcessing = false;
   showAlert = true;
   alertTimer = millis();
+  releaseImageTimer = millis();
 
   if (message === "INFLAMMATORY") {
     speakOutLoud(detectedIngredients);
