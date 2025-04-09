@@ -1,16 +1,17 @@
 // --- sketch.js ---
+import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
 let capture;
-let ocrResult = "";
-let isProcessing = false;
 let message = "";
 let showAlert = false;
 let alertTimer = 0;
 let alertDuration = 5000;
 let detectedIngredients = [];
-let freezeFrame = false;
-let capturedFrame;
 let showPrompt = true;
 let showProcessing = false;
+let ocrRecognizer;
+let visionLoaded = false;
+let resetTimer = false;
 
 const inflammatoryIngredients = {
   "high fructose corn syrup": "Linked to obesity, insulin resistance, and inflammation.",
@@ -22,21 +23,18 @@ const inflammatoryIngredients = {
   "artificial flavors": "May contain chemical additives linked to inflammation."
 };
 
-function setup() {
+async function setup() {
   createCanvas(640, 480);
   capture = createCapture(VIDEO);
   capture.size(640, 480);
   capture.hide();
+  await loadMediaPipe();
 }
 
 function draw() {
-  if (!freezeFrame) {
-    image(capture, 0, 0, width, height);
-  } else if (capturedFrame) {
-    image(capturedFrame, 0, 0, width, height);
-  }
+  image(capture, 0, 0, width, height);
 
-  if (showPrompt && !isProcessing && !showAlert) {
+  if (showPrompt && visionLoaded && !showAlert && !showProcessing) {
     drawPrompt("Need to check the ingredients?");
   }
 
@@ -54,61 +52,57 @@ function draw() {
     drawAlertCard();
     if (millis() - alertTimer > alertDuration) {
       showAlert = false;
-      freezeFrame = false;
-      capturedFrame = null;
+      message = "";
+      detectedIngredients = [];
       showPrompt = true;
     }
   }
 }
 
 function mousePressed() {
-  if (!isProcessing) {
-    processImage();
+  if (visionLoaded && !showAlert && !showProcessing) {
+    processFrame();
   }
 }
 
-function processImage() {
-  if (isProcessing) return;
-  isProcessing = true;
+async function loadMediaPipe() {
+  const { FilesetResolver, TextRecognizer } = await vision;
+  const visionFileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+  );
+
+  ocrRecognizer = await TextRecognizer.createFromOptions(visionFileset, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/text_recognizer/latin/float16/latest/text_recognizer.task",
+    },
+    runningMode: "IMAGE",
+  });
+  visionLoaded = true;
+}
+
+async function processFrame() {
   showPrompt = false;
   showProcessing = true;
-  freezeFrame = true;
-  capturedFrame = get();
 
-  capture.loadPixels();
-  let imgData = capture.canvas.toDataURL();
+  const canvas = capture.canvas;
+  const imageBitmap = await createImageBitmap(canvas);
+  const result = await ocrRecognizer.recognize(imageBitmap);
 
-  Tesseract.recognize(
-    imgData,
-    "eng",
-    { logger: m => console.log(m) }
-  )
-    .then(({ data: { text } }) => {
-      ocrResult = text.toLowerCase();
-      console.log("OCR Result:", ocrResult);
+  const text = result.text.toLowerCase();
+  console.log("OCR Result:", text);
 
-      detectedIngredients = containsInflammatory(ocrResult);
-      message = detectedIngredients.length > 0 ? "INFLAMMATORY" : "SAFE";
+  detectedIngredients = containsInflammatory(text);
+  message = detectedIngredients.length > 0 ? "INFLAMMATORY" : "SAFE";
 
-      alertDuration = message === "INFLAMMATORY" ? 5000 : 2500;
-      showAlert = true;
-      showProcessing = false;
-      alertTimer = millis();
+  alertDuration = message === "INFLAMMATORY" ? 5000 : 2500;
+  showProcessing = false;
+  showAlert = true;
+  alertTimer = millis();
 
-      if (message === "INFLAMMATORY") {
-        speakOutLoud(detectedIngredients);
-      }
-
-      isProcessing = false;
-    })
-    .catch(err => {
-      console.error(err);
-      isProcessing = false;
-      showProcessing = false;
-      freezeFrame = false;
-      capturedFrame = null;
-      showPrompt = true;
-    });
+  if (message === "INFLAMMATORY") {
+    speakOutLoud(detectedIngredients);
+  }
 }
 
 function containsInflammatory(text) {
@@ -117,7 +111,7 @@ function containsInflammatory(text) {
     if (text.includes(ingredient)) {
       matches.push({
         name: ingredient,
-        reason: inflammatoryIngredients[ingredient]
+        reason: inflammatoryIngredients[ingredient],
       });
     }
   }
@@ -142,7 +136,6 @@ function drawBadge(icon, bgColor, x, y) {
     textAlign(LEFT, CENTER);
     text("All ingredients look safe", x - 170, y + 15);
   }
-
   pop();
 }
 
@@ -168,7 +161,7 @@ function drawAlertCard() {
   rect(x, y, 300, cardHeight, 16);
 
   fill(255, alpha);
-  textFont('Helvetica');
+  textFont("Helvetica");
   textSize(14);
   textAlign(LEFT, TOP);
 
@@ -185,7 +178,6 @@ function drawAlertCard() {
     text(`${item.reason}`, tx + 12, ty, maxWidth - 12, 100);
     ty += 28;
   }
-
   pop();
 }
 
