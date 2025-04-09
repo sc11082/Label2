@@ -1,3 +1,4 @@
+// --- sketch.js ---
 import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
 let capture;
@@ -58,6 +59,7 @@ function draw() {
     }
   }
 
+  // Release the image after a fixed time
   if (releaseImageTimer > 0 && millis() - releaseImageTimer > releaseAfter) {
     showProcessing = false;
     releaseImageTimer = 0;
@@ -71,7 +73,7 @@ function mousePressed() {
 }
 
 async function loadMediaPipe() {
-  const { FilesetResolver, TextRecognizer } = vision;
+  const { FilesetResolver, TextRecognizer } = await vision;
   const visionFileset = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
   );
@@ -90,8 +92,8 @@ async function processFrame() {
   showPrompt = false;
   showProcessing = true;
 
-  const p5Canvas = get(); // gets current p5 canvas
-  const imageBitmap = await createImageBitmap(p5Canvas.elt); // convert canvas to bitmap
+  const canvas = capture.canvas;
+  const imageBitmap = await createImageBitmap(canvas);
   const result = await ocrRecognizer.recognize(imageBitmap);
 
   const text = result.text.toLowerCase();
